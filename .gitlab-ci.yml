@@ -1,0 +1,49 @@
+---
+
+stages:
+  - generate
+  - update
+
+variables:
+  IMAGE: "ubuntu"
+  IMAGE_VERSION: "latest"
+
+image: ${IMAGE}:${IMAGE_VERSION}
+
+generate-files:
+  stage: generate
+
+  script:
+      - bash generate-files-for-source-control-update.sh
+
+  artifacts:
+    paths:
+      - /path/to/generated/file
+      - /path/to/another/generated/file
+
+update-branch:
+  stage: update
+
+  when: manual
+
+  before_script:
+    - command -v ssh-agent >/dev/null || ( apt-get update -y && apt-get install openssh-client -y )
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - git config --global user.email "<runner's email>"
+    - git config --global user.name "<runner's name>"
+    - git remote set-url --push origin $(perl -pe 's#.*@(.+?(\:\d+)?)/#git@\1:#' <<< $CI_REPOSITORY_URL)
+
+  script:
+    - git status
+    - git checkout "${CI_COMMIT_REF_NAME}"
+    - git add /path/to/generated/file /path/to/another/generated/file
+    - git commit -m "[ci skip] ${CI_COMMIT_MESSAGE}" || true
+    - git push origin "${CI_COMMIT_REF_NAME}" -o ci.skip || true
+
+  needs:
+    - generate-files
